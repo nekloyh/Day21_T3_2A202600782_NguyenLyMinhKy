@@ -1,0 +1,23 @@
+# Lab 21 — LoRA/QLoRA Fine-tuning · pinned deps (Option C reproducibility)
+#
+# GPU stack (torch / CUDA) do Google Colab cung cấp sẵn — KHÔNG pin ở đây
+# để tránh xung đột với image. Phiên bản chính xác của lần chạy: xem
+# results/requirements_freeze.txt (sinh bởi cell cuối notebook: pip freeze).
+#
+# Cài lại môi trường (Google Colab, Internet = On):
+#   pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
+#   pip install --no-deps "trl>=0.12,<0.16" peft accelerate bitsandbytes
+#   pip install datasets matplotlib seaborn pandas wandb huggingface_hub
+
+unsloth                       # custom CUDA kernels (cài từ git như trên)
+trl>=0.12,<0.16               # SFTTrainer; cần processing_class với transformers>=4.46
+peft                          # LoRA / DoRA
+accelerate
+bitsandbytes                  # 4-bit NF4 quantization (QLoRA)
+transformers>=4.46
+datasets
+matplotlib
+seaborn
+pandas
+wandb                         # stretch: W&B logging
+huggingface_hub               # Option B: push adapter lên HF Hub
