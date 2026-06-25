@@ -1,146 +1,120 @@
 # Lab 21 — Evaluation Report
 
-**Học viên**: `<Họ tên>` — `<MSSV>`
-**Ngày nộp**: 2026-06-25
-**Submission option**: **B + C** (GitHub + HuggingFace Hub, kèm `requirements.txt` reproduce) · **làm full bonus** (Stretch +10)
-
-> ⚠️ **Lưu ý**: các số trong báo cáo này lấy từ một lần chạy tham chiếu của notebook
-> (Qwen2.5-3B, Tesla T4). **Sau khi bạn chạy lại trên Google Colab (T4), hãy cập nhật lại
-> bảng số liệu + dòng `Base` (chạy cell "Base model perplexity") bằng số của chính bạn.**
-> Honor code: phải tự chạy training, không copy số của bạn khác.
-
----
+**Học viên**: Nguyễn Lý Minh Kỳ — 2A202600782  
+**Ngày nộp**: 2026-06-26  
+**Submission option**: B + C (GitHub + HuggingFace Hub + `requirements.txt`)  
+**Notebook**: `notebooks/Lab21_LoRA_Finetuning_T4.ipynb`
 
 ## 1. Setup
 
 | Mục | Giá trị |
 |---|---|
-| **Base model** | `unsloth/Qwen2.5-3B-bnb-4bit` (QLoRA 4-bit NF4) |
-| **Dataset** | `5CD-AI/Vietnamese-alpaca-gpt4-gg-translated` — 200 samples (**180 train / 20 eval**, seed=42) |
-| **Format** | Alpaca (`### Instruction / ### Input / ### Response`) |
-| **Token length** | min=25, max=738, p50=227, **p95=562**, p99=704 |
-| **max_seq_length** | **1024** (p95=562 → round-up & cap T4) |
-| **GPU** | Tesla T4, ~15 GB (Google Colab Free — 1 GPU) |
-| **target_modules** | `q_proj`, `v_proj` (lab spec) |
-| **Hyperparameters** | 3 epochs · cosine LR `2e-4` · warmup 0.10 · effective batch 8 (1 × grad_accum 8) · `adamw_8bit` · `packing=False` · gradient checkpointing (unsloth) |
-| **Training cost** | ~12.2 phút tổng cho 3 ranks · ≈ **$0.07** @ $0.35/hr (trên **Google Colab Free = miễn phí, $0**) |
-| **HF Hub link** | `https://huggingface.co/<username>/qwen2.5-3b-vi-lab21-r16` *(điền sau khi push — xem LINKS.md)* |
+| **Base model** | `unsloth/Qwen2.5-3B-bnb-4bit` |
+| **Fine-tuning method** | QLoRA 4-bit NF4 + PEFT LoRA |
+| **Dataset** | `5CD-AI/Vietnamese-alpaca-gpt4-gg-translated`, 200 samples |
+| **Split** | 180 train / 20 eval, seed = 42 |
+| **Format** | Alpaca: `### Instruction`, `### Input`, `### Response` |
+| **Token length** | min = 25, max = 738, p50 = 227, p95 = 562, p99 = 704 |
+| **max_seq_length** | 1024 |
+| **GPU/runtime** | Tesla T4, 15.6 GB VRAM, Google Colab |
+| **Libraries** | Unsloth 2026.6.9, TRL 0.15.2, Transformers 5.5.0, Torch 2.11.0+cu128 |
+| **Baseline LoRA config** | `r=16`, `lora_alpha=32`, `target_modules=["q_proj", "v_proj"]`, `lora_dropout=0` |
+| **Training hyperparameters** | 3 epochs, LR `2e-4`, cosine schedule, warmup ratio 0.10, batch size 1, grad accumulation 8, effective batch size 8, `adamw_8bit`, `packing=False` |
+| **Training cost** | 13.7 minutes for r=8/r=16/r=64, estimated $0.08 at $0.35/hour; actual Colab Free cost = $0 |
 
----
+Links:
+- GitHub: `https://github.com/nekloyh/Day21_T3_2A202600782_NguyenLyMinhKy`
+- r=16 adapter: `https://huggingface.co/nekloyh/qwen2.5-3b-vi-lab21-r16`
+- W&B run: `https://wandb.ai/nglyminhky2k4-nknk/lab21-lora-rank/runs/sh2uj7vz`
+
+Artifact check: tôi đã mở `lab21_results.zip`; zip này chứa `r16/`, `r8/`, và `loss_curve.png`. Các số liệu r=64, base, qualitative, stretch, và GGUF được lưu trong executed notebook outputs, HuggingFace links, và các file CSV nhỏ dưới `results/`.
 
 ## 2. Rank Experiment Results
 
 | Rank | Trainable Params | % of total | Train Time | Peak VRAM | Eval Loss | Perplexity |
-|------|-----------------:|-----------:|-----------:|----------:|----------:|-----------:|
-| Base | — | — | — | — | `<điền>` | `<điền — chạy cell base ppl>` |
-| 8    | 1,843,200  | 0.06% | 3.99 min | 7.22 GB | 1.5577 | 4.748 |
-| 16   | 3,686,400  | 0.12% | 4.26 min | 6.62 GB | 1.5161 | 4.554 |
-| 64   | 14,745,600 | 0.48% | 3.99 min | 8.00 GB | 1.4768 | 4.379 |
+|---:|---:|---:|---:|---:|---:|---:|
+| Base | 0 | 0.00% | - | - | 1.8666 | 6.466 |
+| 8 | 1,843,200 | 0.06% | 4.21 min | 7.22 GB | 1.5577 | 4.748 |
+| 16 | 3,686,400 | 0.12% | 5.20 min | 6.62 GB | 1.5161 | 4.554 |
+| 64 | 14,745,600 | 0.48% | 4.28 min | 8.00 GB | 1.4768 | 4.379 |
 
-**Quan sát nhanh:**
-- **Trainable params ∝ rank** đúng tuyến tính: r=16 gấp 2× r=8; r=64 gấp 4× r=16.
-- **Perplexity giảm đơn điệu theo rank**: 4.748 → 4.554 → 4.379.
-- **Train time ≈ nhau (~4 phút)** — ở quy mô 180 mẫu, thời gian bị chi phối bởi forward/data
-  chứ không phải kích thước adapter.
-- **Peak VRAM** không tăng tuyến tính (r=16 còn thấp hơn r=8 đôi chút) — adapter chỉ chiếm
-  vài MB, phần lớn dao động đến từ fragmentation giữa các lần reload base model.
-
----
+Observations:
+- All LoRA ranks improve over the base model: perplexity drops from 6.466 to 4.748/4.554/4.379.
+- Increasing rank improves perplexity monotonically, but the gain becomes smaller relative to the parameter increase.
+- `r=16` doubles the trainable parameters over `r=8` and improves perplexity by 4.1%.
+- `r=64` uses 4x the trainable parameters of `r=16` but improves perplexity by only 3.8%.
+- Training time is close across ranks because the experiment is small and the frozen 3B base model dominates forward/backward cost more than the adapter size.
 
 ## 3. Loss Curve Analysis
 
-![loss curve](results/loss_curve.png)
+![Training loss curve](results/loss_curve.png)
 
-- Profile T4 **tắt eval-during-training** (tiết kiệm VRAM) → chỉ có **train loss curve**.
-- Train loss giảm đều qua 3 epochs (69 steps) và không bật ngược lên → **chưa thấy dấu hiệu
-  overfitting rõ** trong khoảng 3 epochs.
-- Vì không có eval-loss-theo-step nên đánh giá overfitting dựa trên **eval perplexity cuối cùng**:
-  cả 3 ranks đều cho ppl ~4.4–4.7 (thấp hơn base), nghĩa là model học được phân phối dữ liệu
-  mà chưa quá khớp. Nếu tăng số epoch lên 5–8 với dataset nhỏ 180 mẫu thì rủi ro overfitting
-  (đặc biệt r=64) sẽ cao hơn — nên giữ ở 3 epochs.
+The training loss trends downward through 69 steps. There is normal mini-batch noise, but the later losses stay below the early losses for all rank runs. Because the T4 profile disables mid-training eval to reduce VRAM pressure, overfitting is judged from final eval perplexity and qualitative behavior instead of eval-loss-per-step.
 
----
+I do not see strong overfitting within 3 epochs. The final eval perplexities are all much lower than the base perplexity, and the qualitative outputs remain fluent. The risk would increase if the same 180 training samples were repeated for more epochs, especially for `r=64`, because it has substantially more capacity than `r=8` or `r=16`.
 
-## 4. Qualitative Comparison (Base vs Fine-tuned r=16)
+## 4. Qualitative Comparison
 
-> 5 prompt tiếng Việt, sinh `max_new_tokens=200`, `temperature=0.7`. Trích gọn để dễ đọc.
-> Chọn cả case **thắng** lẫn **thua** (không cherry-pick).
+Generation settings: 5 Vietnamese prompts, base model vs fine-tuned `r=16`, `max_new_tokens=200`, `temperature=0.7`, `top_p=0.9`.
 
-| # | Prompt | Nhận xét |
-|---|--------|----------|
-| 1 | Giải thích machine learning cho người mới | Cả hai đều trôi chảy, chính xác. **≈ Ngang nhau.** |
-| 2 | Viết code Python tính Fibonacci thứ n | FT thêm **input validation** (`raise ValueError`) → chặt chẽ hơn. **FT thắng.** |
-| 3 | Liệt kê 5 nguyên tắc UI/UX | FT cho danh sách đánh số **gọn, đúng format** hơn base. **FT thắng (về format).** |
-| 4 | Tóm tắt khác biệt LoRA vs QLoRA | FT **hallucinate sai**: gọi LoRA là *"Layer-wise Adaptive Regularization Optimization"* (đúng là *Low-Rank Adaptation*); base lại đúng. **FT thua / degraded.** |
-| 5 | Phân biệt prompt engineering / RAG / fine-tuning | Cả hai tương đương, FT tổ chức ý mạch lạc hơn chút. **≈ Ngang / FT nhỉnh nhẹ.** |
+| # | Prompt | Base output snippet | Fine-tuned output snippet | Result |
+|---:|---|---|---|---|
+| 1 | Giải thích khái niệm machine learning cho người mới bắt đầu. | Explains ML as an AI subfield that learns from data to predict or act. | Explains ML as a computer science field that improves predictions from data without direct instructions. | Similar quality; FT wording is slightly cleaner. |
+| 2 | Viết đoạn code Python tính số Fibonacci thứ n. | Gives a recursive/loop solution and returns a string for invalid `n`. | Gives code with `raise ValueError` for invalid input and handles `n == 0`. | FT wins: stricter input validation and better code style. |
+| 3 | Liệt kê 5 nguyên tắc thiết kế UI/UX. | Gives broad principles such as user friendliness and layout/color clarity. | Gives a concise numbered list: conversion, responsiveness, simplicity, and related principles. | FT wins on structure, though the wording is not perfect. |
+| 4 | Tóm tắt sự khác biệt giữa LoRA và QLoRA. | Correctly identifies LoRA as Low-Rank Adaptation and QLoRA as Quantized LoRA. | Incorrectly expands LoRA as "Layer-wise Adaptive Regularization Optimization". | FT loses: clear hallucination on technical knowledge. |
+| 5 | Phân biệt prompt engineering, RAG, và fine-tuning. | Explains the three as different methods for improving model behavior. | Explains all three with a more organized comparison and clearer transitions. | FT is slightly better for format and organization. |
 
-**Tổng kết định tính**: FT (r=16) cải thiện **format & độ chặt chẽ** ở vài prompt, nhưng
-**không sửa được kiến thức** (ví dụ 4 vẫn hallucinate — đúng với nguyên tắc *"fine-tune cho
-style/format, RAG cho knowledge"*). Khác biệt nhìn chung **tinh tế** vì dataset chỉ 180 mẫu và
-chỉ target `q+v`. Bảng đầy đủ trong `results/qualitative_comparison.csv`.
-
----
+Qualitative conclusion: the fine-tuned model improves formatting, concise structure, and coding style, but it does not reliably improve factual knowledge. The LoRA/QLoRA example is the clearest failure case: the base model knows the correct expansion while the fine-tuned adapter hallucinates. This matches the course principle: use fine-tuning for behavior, tone, format, and task style; use RAG for factual knowledge updates.
 
 ## 5. Conclusion về Rank Trade-off
 
-Trên dataset Vietnamese-Alpaca 180 mẫu này, **rank = 16 cho ROI tốt nhất**. Đi từ r=8 lên r=16
-(gấp đôi params) giảm perplexity từ 4.748 xuống 4.554 (~4.1%), trong khi đi tiếp từ r=16 lên r=64
-(gấp **4 lần** params và +21% VRAM) chỉ giảm thêm từ 4.554 xuống 4.379 (~3.8%). Đây chính là biểu
-hiện **diminishing returns**: chi phí (params, VRAM) tăng theo cấp số nhân nhưng chất lượng chỉ
-nhích tuyến tính rồi chững lại — mỗi tham số tăng thêm ở r=64 "mua" được ít cải thiện hơn hẳn so
-với ở r=16. Nguyên nhân: với chỉ ~180 mẫu và chỉ target `q_proj/v_proj`, không gian thông tin cần
-học khá nhỏ, nên rank thấp đã đủ "chứa" được; tăng rank chỉ thêm capacity mà dữ liệu không đủ để
-tận dụng. **Khuyến nghị deploy production: chọn r=16** — gần như toàn bộ phần lợi ích với một
-nửa params của r=64, adapter vẫn rất nhẹ (3.7M params) và merge vào base cho **zero added latency**.
-Chỉ nâng lên r=64 nếu bài toán cực kỳ nhạy chất lượng *và* có dataset lớn hơn nhiều để khai thác
-capacity; còn r=8 hợp lý khi serving multi-tenant nhiều adapter trên cùng GPU và cần tiết kiệm
-bộ nhớ tối đa. Bài học lớn hơn: ở quy mô dữ liệu nhỏ, **chất lượng/độ lớn dataset quan trọng hơn
-việc tăng rank**.
+For this dataset and runtime, `r=16` is the best practical rank. `r=8` is already much better than the base model, but `r=16` gives a useful perplexity improvement while keeping the adapter small: 3.69M trainable parameters, about 0.12% of the model. `r=64` gives the best perplexity, but it requires 14.75M trainable parameters, which is 4x larger than `r=16`, and only improves perplexity from 4.554 to 4.379. That is a classic diminishing-return pattern: rank increases adapter capacity linearly, but the available training signal is limited by the small 180-sample train set.
 
----
+If I were deploying this adapter, I would choose `r=16`. It is a good balance between quality, memory, and adapter size, and it keeps multi-adapter serving practical. I would choose `r=8` only if I needed many lightweight adapters in parallel or had strict storage constraints. I would choose `r=64` only after collecting a larger and cleaner dataset where the extra capacity can be used without overfitting. The more important next improvement is not simply increasing rank, but improving dataset quality and coverage.
 
 ## 6. What I Learned
 
-- **Rank không phải "càng cao càng tốt"** — diminishing returns xuất hiện rất sớm khi dataset nhỏ;
-  r=16 là điểm cân bằng thực tế, đúng như khuyến nghị "standard choice" trong bài giảng.
-- **Fine-tune sửa style/format chứ không sửa knowledge** — ví dụ 4 (hallucinate tên LoRA) cho thấy
-  rõ: muốn đúng *kiến thức* phải dùng RAG, SFT chỉ dạy *cách trình bày*.
-- **Kỹ thuật chạy trên GPU nhỏ là cốt lõi**: QLoRA 4-bit + gradient checkpointing + batch=1 +
-  grad-accum giúp fine-tune Qwen2.5-3B gọn trong ~7–8 GB VRAM của một T4 — và toàn bộ thí nghiệm
-  3 ranks chỉ tốn ~12 phút, gần như miễn phí trên Google Colab Free.
+- LoRA rank is a capacity control, not a free quality knob. Higher rank can improve perplexity, but the return depends on dataset size and quality.
+- QLoRA makes 3B-model fine-tuning feasible on a T4 by freezing the 4-bit base and training only small adapter matrices.
+- Fine-tuning mainly teaches response style, structure, and task format. It can still hallucinate factual details, so knowledge-heavy workflows should use RAG or retrieval-backed evaluation.
+- Reporting the base model matters. Without the base perplexity, it is easy to overstate the rank comparison; here the base row shows that all three adapters learned something useful.
 
----
+## 7. Extended Experiments
 
-## 7. Stretch Goals (Bonus +10)
-
-> Train thêm trên **cùng dataset / cùng hyperparameters**, chỉ đổi cấu hình LoRA. Số liệu điền
-> sau khi chạy các cell Section 7 trên Google Colab.
-
-### 7.1 Target ALL layers vs baseline q+v (r=16)
+### 7.1 Target ALL Layers vs Baseline `q+v`
 
 | Variant | Target modules | Trainable Params | Train Time | Peak VRAM | Eval Loss | Perplexity |
-|---------|----------------|-----------------:|-----------:|----------:|----------:|-----------:|
-| Baseline | `q,v` | 3,686,400 | 4.26 min | 6.62 GB | 1.5161 | 4.554 |
-| ALL layers | `q,k,v,o,gate,up,down` | `<điền>` | `<điền>` | `<điền>` | `<điền>` | `<điền>` |
+|---|---|---:|---:|---:|---:|---:|
+| r16 baseline | `q,v` | 3,686,400 | 5.20 min | 6.62 GB | 1.5161 | 4.554 |
+| r16 ALL layers | `q,k,v,o,gate,up,down` | 29,933,568 | 5.09 min | 10.59 GB | 1.4948 | 4.459 |
 
-- **Nhận xét**: target ALL layers tăng trainable params ~3–4× và thường cải thiện perplexity
-  rõ hơn so với chỉ nâng rank trên q+v (best practice 2025). `<cập nhật kết luận sau khi chạy>`.
+Targeting all layers improves perplexity over the `q+v` baseline, but it uses 8.1x more trainable parameters and about 4 GB more peak VRAM. It is useful when quality is more important than adapter size, but it is not as parameter-efficient as the baseline for this small dataset.
 
-### 7.2 DoRA vs LoRA (r=16, q+v)
+### 7.2 DoRA vs LoRA
 
 | Variant | Trainable Params | Train Time | Peak VRAM | Eval Loss | Perplexity |
-|---------|-----------------:|-----------:|----------:|----------:|-----------:|
-| LoRA (baseline) | 3,686,400 | 4.26 min | 6.62 GB | 1.5161 | 4.554 |
-| DoRA | `<điền>` | `<điền>` | `<điền>` | `<điền>` | `<điền>` |
+|---|---:|---:|---:|---:|---:|
+| LoRA r16 `q+v` | 3,686,400 | 5.20 min | 6.62 GB | 1.5161 | 4.554 |
+| DoRA r16 `q+v` | 3,769,344 | 4.93 min | 11.53 GB | 1.5162 | 4.555 |
 
-- **Nhận xét**: DoRA tách magnitude/direction → kỳ vọng perplexity tốt hơn nhẹ, đổi lại chậm hơn.
-  `<cập nhật: có cải thiện không?>`
+DoRA did not improve this run. It produced essentially the same perplexity as LoRA while using much more VRAM. For this small dataset and short training schedule, standard LoRA is the better choice.
 
-### 7.3 W&B
-- Run link: `<https://wandb.ai/<user>/lab21-lora-rank/runs/...>` *(bật `USE_WANDB=True` + secret `WANDB_API_KEY`)*
+### 7.3 GGUF Export and Hub Links
 
-### 7.4 GGUF export
-- Đã merge r=16 + export `q4_k_m` → `r16_gguf/`, test với `llama.cpp`. *(bật `SAVE_GGUF=True`)*
+The `r=16` adapter was merged and exported to GGUF `q4_k_m`. The notebook output reports a successful conversion to `Qwen2.5-3B.Q4_K_M.gguf`.
 
-### 7.5 Reproducibility (Option C)
-- `requirements.txt` (pins) + `results/requirements_freeze.txt` (exact `pip freeze`).
+- ALL-layers r=16: `https://huggingface.co/nekloyh/qwen2.5-3b-vi-lab21-r16-all`
+- DoRA r=16: `https://huggingface.co/nekloyh/qwen2.5-3b-vi-lab21-r16-dora`
+- GGUF q4_k_m: `https://huggingface.co/nekloyh/qwen2.5-3b-vi-lab21-r16-gguf`
+
+### 7.4 Reproducibility
+
+The notebook saves `rank_experiment_summary.csv`, `qualitative_comparison.csv`, `stretch_comparison.csv`, and `requirements_freeze.txt` to `OUTPUT_DIR`. I also mirrored the key CSVs into `results/` in this repo:
+
+- `results/rank_experiment_summary.csv`
+- `results/qualitative_comparison.csv`
+- `results/stretch_comparison.csv`
+- `results/loss_curve.png`
+
+The repository includes `requirements.txt` for a reproducible environment.

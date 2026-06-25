@@ -1,0 +1,4 @@
+variant,target,dora,trainable_params,train_time_min,peak_vram_gb,eval_loss,eval_perplexity
+r16 q+v baseline,"q,v",false,3686400,5.195630,6.617750,1.516083,4.554351
+r16 ALL layers,"q,k,v,o,gate,up,down",false,29933568,5.094764,10.589895,1.494830,4.458580
+r16 DoRA q+v,"q,v",true,3769344,4.929178,11.527167,1.516162,4.554712
